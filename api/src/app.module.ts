@@ -13,6 +13,6 @@ import { ThreatIndicatorService } from './security/threat-indicator.service';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(RibbonFilterMiddleware).forRoutes('*');
+    // consumer.apply(RibbonFilterMiddleware).forRoutes('*');
   }
 }

@@ -62,4 +62,14 @@ export class MemcachedService {
             return false;
         }
     }
+
+    async delete(key: string): Promise<void> {
+        if (!this.client) return;
+
+        try {
+            await this.client.delete(key);
+        } catch (err: any) {
+            this.logger.debug(`memcached delete error for ${key}: ${err.message ?? err}`);
+        }
+    }
 }
