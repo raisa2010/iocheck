@@ -50,16 +50,17 @@ export class ThreatIndicatorService {
         const ips = this.extractRequestIps(request);
 
         for (const ip of ips) {
-            // check cache first
+            // check in memory cache first
+            if (this.isMaliciousIndicator(ip)) {
+                return ip;
+            }
+
+            // check distributed cache second
             try {
                 const cached = await this.memcachedService?.get(`blocked:${ip}`);
                 if (cached) return ip;
             } catch (_) {
                 // ignore cache errors and fall back to in-memory list
-            }
-
-            if (this.isMaliciousIndicator(ip)) {
-                return ip;
             }
         }
 
@@ -147,8 +148,17 @@ export class ThreatIndicatorService {
     async lookup(indicator: string): Promise<{ found: boolean; source: string; indicator: string }> {
         const normalized = this.normalizeIndicator(indicator);
 
-        // 1. Check memcached first (fastest distributed cache)
+        // 1. Check local ribbon filter set - in memory
+        if (this.isMaliciousIndicator(normalized)) {
+            console.log(`Found ${normalized} in local ribbon filter set`);
+            this.metricsService?.recordThreatIndicatorLookup(true, 'local');
+            return { found: true, source: 'local', indicator: normalized };
+        }
+        this.metricsService?.recordThreatIndicatorLookup(false, 'local');
+
+        // 2. Check memcached second (distributed cache)
         try {
+            console.log(`Looking up memcached for blocked:${normalized}`);
             const cached = await this.memcachedService?.get(`blocked:${normalized}`);
             if (cached) {
                 this.metricsService?.recordThreatIndicatorLookup(true, 'memcached');
@@ -156,11 +166,12 @@ export class ThreatIndicatorService {
                 return { found: true, source: 'memcached', indicator: normalized };
             }
             this.metricsService?.recordMemcachedOperation('get', 'success');
+            this.metricsService?.recordThreatIndicatorLookup(false, 'memcached');
         } catch (_) {
             this.metricsService?.recordMemcachedOperation('get', 'error');
         }
 
-        // 2. Check PostgreSQL (persistent store)
+        // 3. Check PostgreSQL (persistent store)
         // try {
         //     const dbRecord = await this.databaseService?.findByIndicator(normalized);
         //     if (dbRecord) {
@@ -177,12 +188,6 @@ export class ThreatIndicatorService {
         // } catch (err) {
         //     this.logger.debug(`Database lookup error: ${err.message}`);
         // }
-
-        // 3. Check local ribbon filter set
-        if (this.isMaliciousIndicator(normalized)) {
-            this.metricsService?.recordThreatIndicatorLookup(true, 'local');
-            return { found: true, source: 'local', indicator: normalized };
-        }
 
         this.metricsService?.recordThreatIndicatorLookup(false, 'not_found');
         return { found: false, source: 'not_found', indicator: normalized };
