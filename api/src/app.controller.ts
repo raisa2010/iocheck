@@ -3,6 +3,7 @@ import type { Response as ExpressResponse } from 'express';
 import { AppService } from './app.service';
 import { MetricsService } from './metrics/metrics.service';
 import { ThreatIndicatorService } from './security/threat-indicator.service';
+import { MemcachedService } from './security/memcached.service';
 
 @Controller()
 export class AppController {
@@ -10,6 +11,7 @@ export class AppController {
     private readonly appService: AppService,
     private readonly threatIndicatorService: ThreatIndicatorService,
     private readonly metricsService: MetricsService,
+    private readonly memcachedService: MemcachedService,
   ) { }
 
   @Get()
@@ -23,7 +25,11 @@ export class AppController {
   }
 
   @Get('/readyz')
-  ready(): { status: string } {
+  async ready(): Promise<{ status: string }> {
+    const ok = await this.memcachedService.ping();
+    if (!ok) {
+      throw new Error('Memcached connection unavailable');
+    }
     return { status: 'ok' };
   }
 
