@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nest-api
+spec:
+  selector:
+    app: nest-api
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
+      nodePort: 30000
+  # Use NodePort so Colima's Kubernetes cluster exposes the service on the host.
+  # This helps avoid needing a separate load-balancer and works with Colima.
+  type: NodePort
