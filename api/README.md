@@ -68,31 +68,65 @@ $ npm install -g @nestjs/mau
 $ mau deploy
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Minikube memcached setup
 
-## Resources
+To deploy memcached in Minikube and test it with `telnet`:
 
-Check out a few resources that may come in handy when working with NestJS:
+1. Start Minikube and enable Kubernetes addons if needed:
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+minikube start --cpus=4 --memory=4096
+minikube addons enable ingress || true
+minikube addons enable metrics-server || true
+```
 
-## Support
+2. Deploy the memcached manifest from the repository:
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```bash
+kubectl apply -f k8s/memcached-deployment.yaml
+```
 
-## Stay in touch
+3. Wait for the memcached pod to be ready:
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+```bash
+kubectl get pods -l app=memcached -o wide
+kubectl rollout status deployment/memcached --timeout=60s
+```
 
-## License
+4. Forward port 11211 from the memcached service to your local machine:
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```bash
+kubectl port-forward service/memcached 11211:11211
+```
+
+5. In another terminal, connect with `telnet`:
+
+```bash
+telnet localhost 11211
+```
+
+6. Run sample memcached commands:
+
+```text
+set blocked:192.0.2.1 0 3600 1
+STORED
+get blocked:192.0.2.1
+VALUE blocked:192.0.2.1 0 1
+1
+END
+```
+
+7. To confirm a miss and a subsequent set/get cycle, try:
+
+```text
+get blocked:203.0.113.11
+END
+set blocked:203.0.113.11 0 3600 1
+STORED
+get blocked:203.0.113.11
+VALUE blocked:203.0.113.11 0 1
+1
+END
+```
+
+This setup lets your application use memcached as a fast cache tier under Minikube while still running the NestJS API locally or inside the cluster.

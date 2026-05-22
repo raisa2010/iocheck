@@ -18,14 +18,14 @@ spec:
     spec:
       affinity:
         podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values:
-                      - nest-api
-              topologyKey: "kubernetes.io/hostname"
+          # requiredDuringSchedulingIgnoredDuringExecution:
+          #   - labelSelector:
+          #       matchExpressions:
+          #         - key: app
+          #           operator: In
+          #           values:
+          #             - nest-api
+          #     topologyKey: "kubernetes.io/hostname"
       containers:
         - name: nest-api
           image: strongkeep-api:latest
@@ -118,14 +118,14 @@ spec:
             allowPrivilegeEscalation: false
       affinity:
         podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values:
-                      - memcached
-              topologyKey: "kubernetes.io/hostname"
+          # requiredDuringSchedulingIgnoredDuringExecution:
+          #   - labelSelector:
+          #       matchExpressions:
+          #         - key: app
+          #           operator: In
+          #           values:
+          #             - memcached
+          #     topologyKey: "kubernetes.io/hostname"
 ---
 apiVersion: v1
 kind: Service
