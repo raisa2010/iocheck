@@ -3,6 +3,15 @@ import type { Request } from 'express';
 import { MetricsService } from '../metrics/metrics.service';
 import { MemcachedService } from './memcached.service';
 
+export type IocType = 'ip' | 'domain' | 'sha256';
+
+export interface IocRecord {
+    type: IocType;
+    value: string;
+    source: string;
+    score: number;
+}
+
 @Injectable()
 export class ThreatIndicatorService {
     private readonly logger = new Logger(ThreatIndicatorService.name);
@@ -11,6 +20,7 @@ export class ThreatIndicatorService {
         '198.51.100.42',
         // Add more known malicious IPs or indicators here.
     ]);
+    private readonly iocRecords = new Map<string, IocRecord>();
 
     constructor(
         private readonly memcachedService?: MemcachedService,
@@ -38,11 +48,6 @@ export class ThreatIndicatorService {
 
     getIndicators(): string[] {
         return Array.from(this.maliciousIndicators);
-    }
-
-    async isMaliciousRequest(request: Request): Promise<boolean> {
-        const match = await this.findMatchingIndicator(request);
-        return Boolean(match);
     }
 
     /** Returns the first matching indicator (cached or configured) or null. */
@@ -118,78 +123,71 @@ export class ThreatIndicatorService {
             .forEach((indicator) => this.maliciousIndicators.add(this.normalizeIndicator(indicator)));
     }
 
-    /** Upsert an indicator to local, memcached, and PostgreSQL. */
-    async upsertIndicator(indicator: string, description?: string): Promise<void> {
-        const normalized = this.normalizeIndicator(indicator);
-        this.maliciousIndicators.add(normalized);
+    /** Upsert an IOC to local, memcached, and PostgreSQL. */
+    async upsertIoc(ioc: IocRecord): Promise<IocRecord> {
+        const normalized = this.normalizeValue(ioc.value, ioc.type);
+        const key = this.formatKey(ioc.type, normalized);
+        const record: IocRecord = { ...ioc, value: normalized };
+        this.iocRecords.set(key, record);
         this.metricsService?.recordThreatIndicatorUpsert();
 
-        // Update memcached
+        if (ioc.type === 'ip') {
+            this.maliciousIndicators.add(normalized);
+        }
+
         try {
             const ttl = Number(process.env.MALICIOUS_CACHE_TTL ?? 3600);
-            await this.memcachedService?.set(`blocked:${normalized}`, '1', ttl);
+            await this.memcachedService?.set(`blocked:${key}`, JSON.stringify(record), ttl);
             this.metricsService?.recordMemcachedOperation('set', 'success');
         } catch (err) {
             this.metricsService?.recordMemcachedOperation('set', 'error');
         }
 
-        // Update PostgreSQL
-        // try {
-        //     await this.databaseService?.upsertIndicator(normalized, 'ip', description, 'api');
-        // } catch (err) {
-        //     this.logger.error(`Failed to upsert indicator in database: ${err.message}`);
-        // }
+        return record;
     }
 
     /**
-     * Lookup an indicator using 3-tier cache: memcached → PostgreSQL → local set.
-     * Returns { found: boolean, source: 'memcached', 'postgres', 'local', or 'not_found' }
+     * Lookup an IOC using 3-tier cache: local map → memcached → PostgreSQL.
      */
-    async lookup(indicator: string): Promise<{ found: boolean; source: string; indicator: string }> {
-        const normalized = this.normalizeIndicator(indicator);
+    async lookupIoc(type: IocType, value: string): Promise<{ found: boolean; source: string; ioc?: IocRecord }> {
+        const normalized = this.normalizeValue(value, type);
+        const key = this.formatKey(type, normalized);
 
-        // 1. Check local ribbon filter set - in memory
-        if (this.isMaliciousIndicator(normalized)) {
-            console.log(`Found ${normalized} in local ribbon filter set`);
+        const local = this.iocRecords.get(key);
+        if (local) {
             this.metricsService?.recordThreatIndicatorLookup(true, 'local');
-            return { found: true, source: 'local', indicator: normalized };
+            return { found: true, source: 'local', ioc: local };
         }
-        this.metricsService?.recordThreatIndicatorLookup(false, 'local');
 
-        // 2. Check memcached second (distributed cache)
         try {
-            console.log(`Looking up memcached for blocked:${normalized}`);
-            const cached = await this.memcachedService?.get(`blocked:${normalized}`);
-            if (cached) {
-                this.metricsService?.recordThreatIndicatorLookup(true, 'memcached');
-                this.metricsService?.recordMemcachedOperation('get', 'success');
-                return { found: true, source: 'memcached', indicator: normalized };
-            }
+            const cached = await this.memcachedService?.get(`blocked:${key}`);
             this.metricsService?.recordMemcachedOperation('get', 'success');
-            this.metricsService?.recordThreatIndicatorLookup(false, 'memcached');
+            if (cached) {
+                try {
+                    const record: IocRecord = JSON.parse(cached);
+                    this.metricsService?.recordThreatIndicatorLookup(true, 'memcached');
+                    return { found: true, source: 'memcached', ioc: record };
+                } catch (err: any) {
+                    this.logger.debug(`Failed to parse memcached IOC record for ${key}: ${err.message ?? err}`);
+                }
+            }
         } catch (_) {
             this.metricsService?.recordMemcachedOperation('get', 'error');
         }
 
-        // 3. Check PostgreSQL (persistent store)
-        // try {
-        //     const dbRecord = await this.databaseService?.findByIndicator(normalized);
-        //     if (dbRecord) {
-        //         this.metricsService?.recordThreatIndicatorLookup(true, 'postgres');
-        //         // Repopulate memcached from db hit
-        //         const ttl = Number(process.env.MALICIOUS_CACHE_TTL ?? 3600);
-        //         try {
-        //             await this.memcachedService?.set(`blocked:${normalized}`, '1', ttl);
-        //         } catch (_) {
-        //             // ignore re-cache errors
-        //         }
-        //         return { found: true, source: 'postgres', indicator: normalized };
-        //     }
-        // } catch (err) {
-        //     this.logger.debug(`Database lookup error: ${err.message}`);
-        // }
-
         this.metricsService?.recordThreatIndicatorLookup(false, 'not_found');
-        return { found: false, source: 'not_found', indicator: normalized };
+        return { found: false, source: 'not_found' };
+    }
+
+    private formatKey(type: IocType, value: string): string {
+        return `${type}:${value}`;
+    }
+
+    private normalizeValue(value: string, type: IocType): string {
+        const normalized = value.trim();
+        if (type === 'domain' || type === 'sha256') {
+            return normalized.toLowerCase();
+        }
+        return normalized.replace(/^::ffff:/, '');
     }
 }
