@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Request } from 'express';
-import { DatabaseService } from '../database/database.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { MemcachedService } from './memcached.service';
 
@@ -16,26 +15,26 @@ export class ThreatIndicatorService {
     constructor(
         private readonly memcachedService?: MemcachedService,
         private readonly metricsService?: MetricsService,
-        private readonly databaseService?: DatabaseService,
+        // private readonly databaseService?: DatabaseService,
     ) {
         this.loadIndicatorsFromEnvironment();
-        this.loadIndicatorsFromDatabase();
+        // this.loadIndicatorsFromDatabase();
     }
 
-    private async loadIndicatorsFromDatabase(): Promise<void> {
-        try {
-            const dbIndicators = await this.databaseService?.getAllIndicators();
-            if (dbIndicators && dbIndicators.length > 0) {
-                dbIndicators.forEach((indicator) => {
-                    const normalized = this.normalizeIndicator(indicator);
-                    this.maliciousIndicators.add(normalized);
-                });
-                this.logger.log(`Loaded ${dbIndicators.length} indicators from database`);
-            }
-        } catch (err) {
-            this.logger.warn(`Failed to load indicators from database: ${err.message}`);
-        }
-    }
+    // private async loadIndicatorsFromDatabase(): Promise<void> {
+    //     try {
+    //         const dbIndicators = await this.databaseService?.getAllIndicators();
+    //         if (dbIndicators && dbIndicators.length > 0) {
+    //             dbIndicators.forEach((indicator) => {
+    //                 const normalized = this.normalizeIndicator(indicator);
+    //                 this.maliciousIndicators.add(normalized);
+    //             });
+    //             this.logger.log(`Loaded ${dbIndicators.length} indicators from database`);
+    //         }
+    //     } catch (err) {
+    //         this.logger.warn(`Failed to load indicators from database: ${err.message}`);
+    //     }
+    // }
 
     getIndicators(): string[] {
         return Array.from(this.maliciousIndicators);
@@ -134,11 +133,11 @@ export class ThreatIndicatorService {
         }
 
         // Update PostgreSQL
-        try {
-            await this.databaseService?.upsertIndicator(normalized, 'ip', description, 'api');
-        } catch (err) {
-            this.logger.error(`Failed to upsert indicator in database: ${err.message}`);
-        }
+        // try {
+        //     await this.databaseService?.upsertIndicator(normalized, 'ip', description, 'api');
+        // } catch (err) {
+        //     this.logger.error(`Failed to upsert indicator in database: ${err.message}`);
+        // }
     }
 
     /**
@@ -162,22 +161,22 @@ export class ThreatIndicatorService {
         }
 
         // 2. Check PostgreSQL (persistent store)
-        try {
-            const dbRecord = await this.databaseService?.findByIndicator(normalized);
-            if (dbRecord) {
-                this.metricsService?.recordThreatIndicatorLookup(true, 'postgres');
-                // Repopulate memcached from db hit
-                const ttl = Number(process.env.MALICIOUS_CACHE_TTL ?? 3600);
-                try {
-                    await this.memcachedService?.set(`blocked:${normalized}`, '1', ttl);
-                } catch (_) {
-                    // ignore re-cache errors
-                }
-                return { found: true, source: 'postgres', indicator: normalized };
-            }
-        } catch (err) {
-            this.logger.debug(`Database lookup error: ${err.message}`);
-        }
+        // try {
+        //     const dbRecord = await this.databaseService?.findByIndicator(normalized);
+        //     if (dbRecord) {
+        //         this.metricsService?.recordThreatIndicatorLookup(true, 'postgres');
+        //         // Repopulate memcached from db hit
+        //         const ttl = Number(process.env.MALICIOUS_CACHE_TTL ?? 3600);
+        //         try {
+        //             await this.memcachedService?.set(`blocked:${normalized}`, '1', ttl);
+        //         } catch (_) {
+        //             // ignore re-cache errors
+        //         }
+        //         return { found: true, source: 'postgres', indicator: normalized };
+        //     }
+        // } catch (err) {
+        //     this.logger.debug(`Database lookup error: ${err.message}`);
+        // }
 
         // 3. Check local ribbon filter set
         if (this.isMaliciousIndicator(normalized)) {

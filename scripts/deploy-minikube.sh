@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 IMAGE_TAG="strongkeep-api:latest"
 
 echo "1/6: Starting minikube..."
-minikube status >/dev/null 2>&1 || minikube start --cpus=4 --memory=4096
+minikube status >/dev/null 2>&1 || minikube start
 
 echo "2/6: Enabling minikube addons (ingress, metrics-server)..."
 minikube addons enable ingress || true

@@ -14,14 +14,14 @@ spec:
     spec:
       affinity:
         podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values:
-                      - nest-api
-              topologyKey: "kubernetes.io/hostname"
+          # requiredDuringSchedulingIgnoredDuringExecution:
+          #   - labelSelector:
+          #       matchExpressions:
+          #         - key: app
+          #           operator: In
+          #           values:
+          #             - nest-api
+          #     topologyKey: "kubernetes.io/hostname"
       containers:
         - name: nest-api
           image: strongkeep-api:latest
@@ -44,14 +44,14 @@ spec:
               memory: "512Mi"
           livenessProbe:
             httpGet:
-              path: /health
+              path: /healthz
               port: 3000
             initialDelaySeconds: 15
             periodSeconds: 20
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
+              path: /healthz
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10
