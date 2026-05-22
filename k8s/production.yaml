@@ -1,0 +1,186 @@
+# Production combined manifests for nest-api and memcached
+# Replace the host in the Ingress with your real domain and configure TLS as needed.
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nest-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nest-api
+  template:
+    metadata:
+      labels:
+        app: nest-api
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - nest-api
+              topologyKey: "kubernetes.io/hostname"
+      containers:
+        - name: nest-api
+          image: strongkeep-api:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MEMCACHED_SERVERS
+              value: "memcached:11211"
+            - name: MALICIOUS_CACHE_TTL
+              value: "3600"
+            - name: NODE_ENV
+              value: "production"
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nest-api
+spec:
+  selector:
+    app: nest-api
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memcached
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: memcached
+  template:
+    metadata:
+      labels:
+        app: memcached
+    spec:
+      containers:
+        - name: memcached
+          image: memcached:1.6-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 11211
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            tcpSocket:
+              port: 11211
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 11211
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - memcached
+              topologyKey: "kubernetes.io/hostname"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: memcached
+spec:
+  selector:
+    app: memcached
+  ports:
+    - protocol: TCP
+      port: 11211
+      targetPort: 11211
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nest-api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nest-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+---
+# Ingress example using NGINX Ingress Controller. Ensure an ingress controller is installed in the cluster.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nest-api-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+    - host: example.com # <-- replace with your domain
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nest-api
+                port:
+                  number: 3000
+# For TLS, add a tls section and ensure you have a TLS secret:
+# tls:
+#   - hosts:
+#       - example.com
+#     secretName: tls-secret
