@@ -10,7 +10,18 @@ export class DatabaseService {
   constructor(
     @InjectRepository(ThreatIndicator)
     private readonly threatIndicatorRepository: Repository<ThreatIndicator>,
-  ) {}
+  ) { }
+
+  async ping(): Promise<boolean> {
+    try {
+      await this.threatIndicatorRepository.query('SELECT 1');
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Database ping error: ${message}`);
+      return false;
+    }
+  }
 
   async findByTypeAndValue(type: string, value: string): Promise<ThreatIndicator | null> {
     try {

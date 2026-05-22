@@ -14,11 +14,11 @@ import { ThreatIndicatorService } from './security/threat-indicator.service';
   imports: [
     TypeOrmModule.forRoot({
       type: 'postgres',
-      database: process.env.POSTGRES_DB ?? 'strongkeep',
-      host: process.env.POSTGRES_HOST ?? 'postgres',
+      database: process.env.POSTGRES_DB ?? 'myapp',
+      host: process.env.POSTGRES_HOST ?? 'localhost',
       port: Number(process.env.POSTGRES_PORT ?? 5432),
       username: process.env.POSTGRES_USER ?? 'strongkeep',
-      password: process.env.POSTGRES_PASSWORD ?? 'strongkeep',
+      password: process.env.POSTGRES_PASSWORD ?? 'postgres',
       entities: [ThreatIndicator],
       synchronize: true,
       dropSchema: process.env.NODE_ENV === 'test',

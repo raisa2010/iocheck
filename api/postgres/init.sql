@@ -1,0 +1,10 @@
+CREATE ROLE strongkeep
+WITH LOGIN
+SUPERUSER
+PASSWORD 'postgres';
+
+CREATE DATABASE myapp;
+
+GRANT ALL PRIVILEGES
+ON DATABASE myapp
+TO strongkeep;
