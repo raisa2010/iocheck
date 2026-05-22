@@ -69,7 +69,7 @@ The overall architecture is:
 - `k8s/memcached-deployment.yaml`: Memcached deployment and service.
 - `k8s/monitoring.yaml`: Prometheus + Node Exporter monitoring stack.
 - `k8s/production.yaml`: Combined production manifest sample.
-- `scripts/`: Helper scripts for Minikube/Colima deployment and teardown.
+- `scripts/`: Helper scripts for Minikube/Colima deployment, teardown, and load testing.
 
 ## Running Locally
 
@@ -129,7 +129,7 @@ It installs Prometheus and Node Exporter in the `monitoring` namespace so you ca
 Forward the Prometheus UI locally:
 
 ```bash
-kubectl port-forward -n monitoring svc/prometheus 9090:9090
+kubectl port-forward -n monitoring service/prometheus 9090:9090
 ```
 
 Open:
@@ -138,6 +138,29 @@ Open:
 http://localhost:9090
 ```
 
+### Grafana access
+
+Grafana is also deployed in the same `monitoring` namespace.
+
+Forward Grafana locally:
+
+```bash
+kubectl port-forward -n monitoring service/grafana 3000:3000
+```
+
+Open:
+
+```bash
+http://localhost:3000
+```
+
+Login with default credentials:
+
+- user: `admin`
+- password: `admin`
+
+Prometheus is preconfigured as a datasource.
+
 Example Prometheus queries:
 
 - `node_cpu_seconds_total`
@@ -145,6 +168,78 @@ Example Prometheus queries:
 - `node_disk_io_time_seconds_total`
 - `node_disk_reads_completed_total`
 - `node_disk_writes_completed_total`
+- `sum(rate(http_requests_total[1m])) by (pod)`
+- `histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[1m])) by (le, route))`
+
+## Testing HPA autoscaling
+
+A reproducible load test is provided in `scripts/load-test-hpa.sh`.
+
+1. Deploy the cluster and monitoring stack:
+
+```bash
+sh scripts/deploy-minikube.sh
+```
+
+2. Forward the API locally:
+
+```bash
+kubectl port-forward svc/nest-api 3000:3000
+```
+
+3. Run the HPA load test:
+
+```bash
+sh scripts/load-test-hpa.sh http://localhost:3000 20 200
+```
+
+The script will:
+
+- generate concurrent `/lookup` requests against the API
+- exercise the service through the Kubernetes `Service`, so traffic is shared across all `nest-api` pods
+- print the HPA status and replica count before and after the load
+- wait for the HPA to observe the metric and adjust replicas
+
+4. Access Grafana to inspect request metrics:
+
+```bash
+kubectl port-forward -n monitoring service/grafana 3000:3000
+```
+
+Then open:
+
+```bash
+http://localhost:3000
+```
+
+Use the preconfigured Prometheus datasource and query:
+
+- `sum(rate(http_requests_total[1m])) by (pod)`
+- `sum(rate(http_requests_total[1m])) by (namespace)`
+- `histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[1m])) by (le, route))`
+
+If you want more direct proof of scaling, observe the replica count from:
+
+```bash
+kubectl get hpa nest-api-hpa
+kubectl get pods -l app=nest-api
+```
+
+## Why CPU-based HPA is wrong for this workload
+
+This IOC lookup service is mostly I/O and network bound: the API spends much of its time waiting for memcached responses and HTTP request handling, not burning CPU cycles.
+
+Measured evidence from load testing showed that request rate and latency climb while pod CPU remains low, so a CPU threshold does not reflect actual service load. That means CPU-based scaling can stay flat when the app is overloaded, or spin up unnecessary replicas when traffic is bursty but CPU is still low.
+
+## Request-rate autoscaling
+
+The cluster now uses a Prometheus Adapter-backed HPA, scaling on `http_requests_per_second`:
+
+- `minReplicas: 2` — keeps a small warm pool of pods available and avoids cold-start jitter.
+- `maxReplicas: 6` — caps cost while still allowing the service to absorb spikes.
+- `averageValue: 25` — targets roughly 25 requests per pod per second, which is a reasonable operating point for this app under memcached-backed lookup latency.
+
+This ensures pods share load through the Kubernetes Service, and the HPA reacts to real request traffic instead of raw CPU.
 
 ### Kubernetes CPU / memory metrics
 

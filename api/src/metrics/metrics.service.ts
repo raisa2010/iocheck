@@ -10,6 +10,7 @@ export class MetricsService {
     private threatIndicatorLookupsCounter!: promClient.Counter<string>;
     private threatIndicatorUpsertsCounter!: promClient.Counter<string>;
     private memcachedOperationsCounter!: promClient.Counter<string>;
+    private httpRequestsTotal!: promClient.Counter<string>;
     private httpRequestDurationHistogram!: promClient.Histogram<string>;
 
     constructor() {
@@ -49,6 +50,12 @@ export class MetricsService {
             labelNames: ['operation', 'status'],
         });
 
+        this.httpRequestsTotal = new promClient.Counter({
+            name: 'http_requests_total',
+            help: 'Total number of HTTP requests',
+            labelNames: ['method', 'route', 'status'],
+        });
+
         this.httpRequestDurationHistogram = new promClient.Histogram({
             name: 'http_request_duration_seconds',
             help: 'Bucketed latency for HTTP requests',
@@ -78,6 +85,10 @@ export class MetricsService {
 
     recordMemcachedOperation(operation: 'get' | 'set', status: 'success' | 'error'): void {
         this.memcachedOperationsCounter.inc({ operation, status });
+    }
+
+    recordHttpRequest(method: string, route: string, status: number): void {
+        this.httpRequestsTotal.inc({ method, route, status: status.toString() });
     }
 
     recordRequestLatency(method: string, route: string, durationSeconds: number): void {

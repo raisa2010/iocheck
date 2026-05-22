@@ -8,11 +8,12 @@ spec:
     kind: Deployment
     name: nest-api
   minReplicas: 2
-  maxReplicas: 10
+  maxReplicas: 6
   metrics:
-    - type: Resource
-+      resource:
-+        name: cpu
-+        target:
-+          type: Utilization
-+          averageUtilization: 60
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: 25
