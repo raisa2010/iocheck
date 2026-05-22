@@ -40,16 +40,17 @@ spec:
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
+            runAsUser: 1000
       affinity:
         podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: app
-                    operator: In
-                    values:
-                      - memcached
-              topologyKey: "kubernetes.io/hostname"
+          # requiredDuringSchedulingIgnoredDuringExecution:
+          #   - labelSelector:
+          #       matchExpressions:
+          #         - key: app
+          #           operator: In
+          #           values:
+          #             - memcached
+          #     topologyKey: "kubernetes.io/hostname"
 ---
 apiVersion: v1
 kind: Service
