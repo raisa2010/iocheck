@@ -150,14 +150,15 @@ spec:
     kind: Deployment
     name: nest-api
   minReplicas: 2
-  maxReplicas: 10
+  maxReplicas: 6
   metrics:
-    - type: Resource
-      resource:
-        name: cpu
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
         target:
-          type: Utilization
-          averageUtilization: 60
+          type: AverageValue
+          averageValue: 25
 ---
 # Ingress example using NGINX Ingress Controller. Ensure an ingress controller is installed in the cluster.
 apiVersion: networking.k8s.io/v1

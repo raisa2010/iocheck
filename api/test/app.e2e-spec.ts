@@ -59,27 +59,32 @@ describe('AppController (e2e)', () => {
     spy.mockRestore();
   });
 
-  it('/upsert (POST) and /lookup (POST)', async () => {
+  it('/ioc (POST) and /lookup (POST)', async () => {
     const upsertSpy = jest.spyOn(memcachedStub, 'set');
     const lookupSpy = jest.spyOn(memcachedStub, 'get');
     const upsertMetricsSpy = jest.spyOn(MetricsService.prototype, 'recordThreatIndicatorUpsert');
     const lookupMetricsSpy = jest.spyOn(MetricsService.prototype, 'recordThreatIndicatorLookup');
-    const newIndicator = '203.0.113.55';
+    const payload = {
+      type: 'domain',
+      value: 'evil.example',
+      source: 'admin',
+      score: 90,
+    };
 
     await request(app.getHttpServer())
-      .post('/upsert')
-      .send({ indicator: newIndicator })
+      .post('/ioc')
+      .send(payload)
       .expect(201)
-      .expect({ success: true, indicator: newIndicator });
+      .expect({ verdict: 'malicious', ioc: payload });
 
     expect(upsertMetricsSpy).toHaveBeenCalledTimes(1);
     expect(upsertSpy).toHaveBeenCalledTimes(1);
 
     await request(app.getHttpServer())
       .post('/lookup')
-      .send({ indicator: newIndicator })
+      .send({ type: payload.type, value: payload.value })
       .expect(201)
-      .expect({ found: true, source: 'local', indicator: newIndicator });
+      .expect({ verdict: 'malicious', ioc: payload });
 
     expect(lookupSpy).toHaveBeenCalledTimes(0);
     expect(lookupMetricsSpy).toHaveBeenCalledTimes(1);
@@ -92,29 +97,31 @@ describe('AppController (e2e)', () => {
   });
 
   it('/lookup (POST) should resolve from local ribbon filter without calling memcached', async () => {
-    const upsertSpy = jest.spyOn(memcachedStub, 'set');
     const lookupSpy = jest.spyOn(memcachedStub, 'get');
     const metricsSpy = jest.spyOn(MetricsService.prototype, 'recordThreatIndicatorLookup');
-    const indicator = '203.0.113.12';
+    const payload = {
+      type: 'ip',
+      value: '203.0.113.12',
+      source: 'test-admin',
+      score: 55,
+    };
 
     await request(app.getHttpServer())
-      .post('/upsert')
-      .send({ indicator })
+      .post('/ioc')
+      .send(payload)
       .expect(201)
-      .expect({ success: true, indicator });
-
-    expect(upsertSpy).toHaveBeenCalledTimes(1);
+      .expect({ verdict: 'malicious', ioc: payload });
 
     await request(app.getHttpServer())
       .post('/lookup')
-      .send({ indicator })
+      .send({ type: payload.type, value: payload.value })
       .expect(201)
-      .expect({ found: true, source: 'local', indicator });
+      .expect({ verdict: 'malicious', ioc: payload });
 
+    expect(lookupSpy).not.toHaveBeenCalled();
     expect(metricsSpy).toHaveBeenCalledTimes(1);
     expect(metricsSpy).toHaveBeenCalledWith(true, 'local');
 
-    upsertSpy.mockRestore();
     lookupSpy.mockRestore();
     metricsSpy.mockRestore();
   });
@@ -123,19 +130,22 @@ describe('AppController (e2e)', () => {
     const spy = jest.spyOn(memcachedStub, 'get');
     const metricsSpy = jest.spyOn(MetricsService.prototype, 'recordThreatIndicatorLookup');
     const memcachedOperationSpy = jest.spyOn(MetricsService.prototype, 'recordMemcachedOperation');
-    const indicator = '198.18.0.1';
+    const payload = {
+      type: 'ip' as const,
+      value: '198.18.0.1',
+      source: 'cached-test',
+      score: 73,
+    };
 
-    await memcachedStub.set?.(`blocked:${indicator}`, '1');
+    await memcachedStub.set?.(`blocked:${payload.type}:${payload.value}`, JSON.stringify(payload));
 
     await request(app.getHttpServer())
       .post('/lookup')
-      .send({ indicator })
+      .send({ type: payload.type, value: payload.value })
       .expect(201)
-      .expect({ found: true, source: 'memcached', indicator });
+      .expect({ verdict: 'malicious', ioc: payload });
 
-    expect(spy).toHaveBeenCalledWith(`blocked:${indicator}`);
-    expect(metricsSpy).toHaveBeenCalledTimes(2);
-    expect(metricsSpy).toHaveBeenCalledWith(false, 'local');
+    expect(spy).toHaveBeenCalledWith(`blocked:${payload.type}:${payload.value}`);
     expect(metricsSpy).toHaveBeenCalledWith(true, 'memcached');
     expect(memcachedOperationSpy).toHaveBeenCalledTimes(1);
     expect(memcachedOperationSpy).toHaveBeenCalledWith('get', 'success');
@@ -143,6 +153,14 @@ describe('AppController (e2e)', () => {
     spy.mockRestore();
     metricsSpy.mockRestore();
     memcachedOperationSpy.mockRestore();
+  });
+
+  it('/lookup (POST) should return unknown for a missing IOC', async () => {
+    await request(app.getHttpServer())
+      .post('/lookup')
+      .send({ type: 'domain', value: 'missing.example' })
+      .expect(201)
+      .expect({ verdict: 'unknown' });
   });
 
   it('/metrics (GET)', async () => {

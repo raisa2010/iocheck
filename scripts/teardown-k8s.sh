@@ -33,6 +33,7 @@ MANIFESTS=(
   deployment.yaml
   k8s/service.yaml
   k8s/memcached-deployment.yaml
+  k8s/monitoring.yaml
   k8s/service-prod.yaml
   k8s/hpa.yaml
   k8s/production.yaml

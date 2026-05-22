@@ -5,11 +5,13 @@ import * as promClient from 'prom-client';
 export class MetricsService {
     private readonly logger = new Logger(MetricsService.name);
 
-    private ribbonFilterBlocksCounter: promClient.Counter;
-    private ribbonFilterPassesCounter: promClient.Counter;
-    private threatIndicatorLookupsCounter: promClient.Counter;
-    private threatIndicatorUpsertsCounter: promClient.Counter;
-    private memcachedOperationsCounter: promClient.Counter;
+    private ribbonFilterBlocksCounter!: promClient.Counter<string>;
+    private ribbonFilterPassesCounter!: promClient.Counter<string>;
+    private threatIndicatorLookupsCounter!: promClient.Counter<string>;
+    private threatIndicatorUpsertsCounter!: promClient.Counter<string>;
+    private memcachedOperationsCounter!: promClient.Counter<string>;
+    private httpRequestsTotal!: promClient.Counter<string>;
+    private httpRequestDurationHistogram!: promClient.Histogram<string>;
 
     constructor() {
         this.initializeMetrics();
@@ -47,6 +49,19 @@ export class MetricsService {
             help: 'Total number of memcached operations',
             labelNames: ['operation', 'status'],
         });
+
+        this.httpRequestsTotal = new promClient.Counter({
+            name: 'http_requests_total',
+            help: 'Total number of HTTP requests',
+            labelNames: ['method', 'route', 'status'],
+        });
+
+        this.httpRequestDurationHistogram = new promClient.Histogram({
+            name: 'http_request_duration_seconds',
+            help: 'Bucketed latency for HTTP requests',
+            labelNames: ['method', 'route'],
+            buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
+        });
     }
 
     recordRibbonFilterBlock(reason = 'malicious_indicator'): void {
@@ -70,6 +85,14 @@ export class MetricsService {
 
     recordMemcachedOperation(operation: 'get' | 'set', status: 'success' | 'error'): void {
         this.memcachedOperationsCounter.inc({ operation, status });
+    }
+
+    recordHttpRequest(method: string, route: string, status: number): void {
+        this.httpRequestsTotal.inc({ method, route, status: status.toString() });
+    }
+
+    recordRequestLatency(method: string, route: string, durationSeconds: number): void {
+        this.httpRequestDurationHistogram.observe({ method, route }, durationSeconds);
     }
 
     /**

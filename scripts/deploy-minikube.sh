@@ -23,10 +23,14 @@ echo "5/6: Applying Kubernetes manifests"
 kubectl apply -f deployment.yaml
 kubectl apply -f k8s/service.yaml
 kubectl apply -f k8s/memcached-deployment.yaml
+kubectl apply -f k8s/monitoring.yaml
+kubectl apply -f k8s/hpa.yaml
 
 echo "6/6: Waiting for deployment rollouts"
 kubectl rollout status deployment/nest-api --timeout=120s || true
 kubectl rollout status deployment/memcached --timeout=60s || true
+kubectl rollout status deployment/prometheus -n monitoring --timeout=120s || true
+kubectl rollout status deployment/prometheus-adapter -n monitoring --timeout=120s || true
 
 echo ""
 echo "========================================="
