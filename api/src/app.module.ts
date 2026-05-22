@@ -1,6 +1,9 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { DatabaseService } from './database/database.service';
+import { ThreatIndicator } from './database/entities/threat-indicator.entity';
 import { LatencyMiddleware } from './metrics/latency.middleware';
 import { MetricsService } from './metrics/metrics.service';
 import { MemcachedService } from './security/memcached.service';
@@ -8,9 +11,31 @@ import { RibbonFilterMiddleware } from './security/ribbon-filter.middleware';
 import { ThreatIndicatorService } from './security/threat-indicator.service';
 
 @Module({
-  imports: [],
+  imports: [
+    TypeOrmModule.forRoot({
+      type: 'postgres',
+      database: process.env.POSTGRES_DB ?? 'strongkeep',
+      host: process.env.POSTGRES_HOST ?? 'postgres',
+      port: Number(process.env.POSTGRES_PORT ?? 5432),
+      username: process.env.POSTGRES_USER ?? 'strongkeep',
+      password: process.env.POSTGRES_PASSWORD ?? 'strongkeep',
+      entities: [ThreatIndicator],
+      synchronize: true,
+      dropSchema: process.env.NODE_ENV === 'test',
+      logging: false,
+    }),
+    TypeOrmModule.forFeature([ThreatIndicator]),
+  ],
   controllers: [AppController],
-  providers: [AppService, ThreatIndicatorService, MemcachedService, MetricsService, RibbonFilterMiddleware, LatencyMiddleware],
+  providers: [
+    AppService,
+    ThreatIndicatorService,
+    MemcachedService,
+    MetricsService,
+    RibbonFilterMiddleware,
+    LatencyMiddleware,
+    DatabaseService,
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

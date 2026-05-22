@@ -11,14 +11,12 @@ export class MemcachedService {
     // private setAsync: (key: string, value: string, options: any) => Promise<any>;
 
     constructor() {
-        console.log(process.env.MEMCACHED_SERVERS, '-------');
         const servers = process.env.MEMCACHED_SERVERS ?? 'localhost:11211';
         try {
             this.client = memjs.Client.create(servers);
             // this.getAsync = this.client.get;
             // this.setAsync = this.client.set;
         } catch (err) {
-            console.log('warning! failed to create client')
             this.logger.warn('Failed to create memcached client; memcached operations will be no-ops');
             this.client = null;
             // this.getAsync = async () => null;

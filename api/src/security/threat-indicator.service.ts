@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Request } from 'express';
+import { DatabaseService } from 'src/database/database.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { MemcachedService } from './memcached.service';
 
@@ -25,26 +26,10 @@ export class ThreatIndicatorService {
     constructor(
         private readonly memcachedService?: MemcachedService,
         private readonly metricsService?: MetricsService,
-        // private readonly databaseService?: DatabaseService,
+        private readonly databaseService?: DatabaseService,
     ) {
         this.loadIndicatorsFromEnvironment();
-        // this.loadIndicatorsFromDatabase();
     }
-
-    // private async loadIndicatorsFromDatabase(): Promise<void> {
-    //     try {
-    //         const dbIndicators = await this.databaseService?.getAllIndicators();
-    //         if (dbIndicators && dbIndicators.length > 0) {
-    //             dbIndicators.forEach((indicator) => {
-    //                 const normalized = this.normalizeIndicator(indicator);
-    //                 this.maliciousIndicators.add(normalized);
-    //             });
-    //             this.logger.log(`Loaded ${dbIndicators.length} indicators from database`);
-    //         }
-    //     } catch (err) {
-    //         this.logger.warn(`Failed to load indicators from database: ${err.message}`);
-    //     }
-    // }
 
     getIndicators(): string[] {
         return Array.from(this.maliciousIndicators);

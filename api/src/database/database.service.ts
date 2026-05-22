@@ -5,74 +5,77 @@ import { ThreatIndicator } from './entities/threat-indicator.entity';
 
 @Injectable()
 export class DatabaseService {
-    private readonly logger = new Logger(DatabaseService.name);
+  private readonly logger = new Logger(DatabaseService.name);
 
-    constructor(
-        @InjectRepository(ThreatIndicator)
-        private readonly threatIndicatorRepository: Repository<ThreatIndicator>,
-    ) { }
+  constructor(
+    @InjectRepository(ThreatIndicator)
+    private readonly threatIndicatorRepository: Repository<ThreatIndicator>,
+  ) {}
 
-    async findByIndicator(indicator: string): Promise<ThreatIndicator | null> {
-        try {
-            return await this.threatIndicatorRepository.findOne({
-                where: { indicator },
-            });
-        } catch (err) {
-            this.logger.error(`Database lookup error for ${indicator}: ${err.message}`);
-            return null;
-        }
+  async findByTypeAndValue(type: string, value: string): Promise<ThreatIndicator | null> {
+    try {
+      return await this.threatIndicatorRepository.findOne({
+        where: { type, value },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Database lookup error for ${type}:${value}: ${message}`);
+      return null;
     }
+  }
 
-    async upsertIndicator(
-        indicator: string,
-        type = 'ip',
-        description?: string,
-        source = 'api',
-    ): Promise<ThreatIndicator | null> {
-        try {
-            let threatIndicator = await this.threatIndicatorRepository.findOne({
-                where: { indicator },
-            });
+  async upsertIoc(
+    type: string,
+    value: string,
+    source: string,
+    score: number,
+  ): Promise<ThreatIndicator | null> {
+    try {
+      let existing = await this.threatIndicatorRepository.findOne({
+        where: { type, value },
+      });
 
-            if (threatIndicator) {
-                threatIndicator.updatedAt = new Date();
-                if (description) threatIndicator.description = description;
-                if (source) threatIndicator.source = source;
-                return await this.threatIndicatorRepository.save(threatIndicator);
-            }
+      if (existing) {
+        existing.source = source;
+        existing.score = score;
+        return await this.threatIndicatorRepository.save(existing);
+      }
 
-            threatIndicator = this.threatIndicatorRepository.create({
-                indicator,
-                type,
-                description,
-                source,
-            });
-            return await this.threatIndicatorRepository.save(threatIndicator);
-        } catch (err) {
-            this.logger.error(`Database upsert error for ${indicator}: ${err.message}`);
-            return null;
-        }
+      const ioc = this.threatIndicatorRepository.create({
+        type,
+        value,
+        source,
+        score,
+      });
+      return await this.threatIndicatorRepository.save(ioc);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Database upsert error for ${type}:${value}: ${message}`);
+      return null;
     }
+  }
 
-    async getAllIndicators(): Promise<string[]> {
-        try {
-            const indicators = await this.threatIndicatorRepository.find({
-                select: ['indicator'],
-            });
-            return indicators.map((t) => t.indicator);
-        } catch (err) {
-            this.logger.error(`Database getAllIndicators error: ${err.message}`);
-            return [];
-        }
+  async getAllIndicators(): Promise<string[]> {
+    try {
+      const iocs = await this.threatIndicatorRepository.find({
+        select: ['type', 'value'],
+      });
+      return iocs.map((ioc) => `${ioc.type}:${ioc.value}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Database getAllIndicators error: ${message}`);
+      return [];
     }
+  }
 
-    async deleteIndicator(indicator: string): Promise<boolean> {
-        try {
-            const result = await this.threatIndicatorRepository.delete({ indicator });
-            return !result ? false : !result.affected ? false : result.affected > 0;
-        } catch (err) {
-            this.logger.error(`Database delete error for ${indicator}: ${err.message}`);
-            return false;
-        }
+  async deleteIoc(type: string, value: string): Promise<boolean> {
+    try {
+      const result = await this.threatIndicatorRepository.delete({ type, value });
+      return !!result.affected && result.affected > 0;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Database delete error for ${type}:${value}: ${message}`);
+      return false;
     }
+  }
 }
