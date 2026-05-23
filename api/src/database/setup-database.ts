@@ -1,4 +1,4 @@
-import { Client } from 'pg';
+import { Client, type ClientConfig } from 'pg';
 
 export interface DatabaseConfig {
   host: string;
@@ -10,28 +10,61 @@ export interface DatabaseConfig {
   adminPassword: string;
 }
 
+function readEnv(name: string, fallback?: string): string {
+  const value = process.env[name]?.trim();
+  if (value) {
+    return value;
+  }
+  if (fallback !== undefined) {
+    return fallback;
+  }
+  throw new Error(`${name} is required`);
+}
+
 export function getDatabaseConfig(): DatabaseConfig {
   const isTest = process.env.NODE_ENV === 'test';
+  const host = process.env.POSTGRES_HOST ?? 'localhost';
+  const isRemote = host !== 'localhost' && host !== '127.0.0.1';
+
+  const user = isRemote
+    ? readEnv('POSTGRES_USER')
+    : readEnv('POSTGRES_USER', 'strongkeep');
+  const password = isRemote
+    ? readEnv('POSTGRES_PASSWORD')
+    : readEnv('POSTGRES_PASSWORD', 'postgres');
+  const database = isRemote
+    ? readEnv('POSTGRES_DB')
+    : readEnv('POSTGRES_DB', isTest ? 'myapp-test' : 'myapp');
 
   return {
-    host: process.env.POSTGRES_HOST ?? 'localhost',
+    host,
     port: Number(process.env.POSTGRES_PORT ?? 5432),
-    database: process.env.POSTGRES_DB ?? (isTest ? 'myapp-test' : 'myapp'),
-    user: process.env.POSTGRES_USER ?? 'strongkeep',
-    password: process.env.POSTGRES_PASSWORD ?? 'postgres',
-    adminUser: process.env.POSTGRES_ADMIN_USER ?? process.env.USER ?? 'postgres',
-    adminPassword: process.env.POSTGRES_ADMIN_PASSWORD ?? '',
+    database,
+    user,
+    password,
+    adminUser: readEnv('POSTGRES_ADMIN_USER', isRemote ? user : process.env.USER ?? 'postgres'),
+    adminPassword: readEnv(
+      'POSTGRES_ADMIN_PASSWORD',
+      isRemote ? password : '',
+    ),
   };
 }
 
-/** Mirrors k8s/postgres/init-user.sh — creates role, database, and grants. */
+function createClient(config: ClientConfig): Client {
+  return new Client({
+    connectionTimeoutMillis: 10_000,
+    ...config,
+  });
+}
+
+/** Mirrors api/postgres/init.sql — ensures role, database, and grants exist. */
 export async function setupDatabase(config: DatabaseConfig = getDatabaseConfig()): Promise<void> {
-  const admin = new Client({
+  const admin = createClient({
     host: config.host,
     port: config.port,
     user: config.adminUser,
     password: config.adminPassword,
-    database: 'postgres',
+    database: 'template1',
   });
 
   await admin.connect();
@@ -66,7 +99,7 @@ export async function setupDatabase(config: DatabaseConfig = getDatabaseConfig()
 
   await admin.end();
 
-  const app = new Client({
+  const app = createClient({
     host: config.host,
     port: config.port,
     user: config.user,

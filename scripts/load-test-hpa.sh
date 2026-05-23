@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
-SERVICE_URL="${1:-http://localhost:3000}"
-CONCURRENCY="${2:-20}"
-REQUESTS="${3:-200}"
+SERVICE_URL="${1:-http://localhost:51288}"
+CONCURRENCY="${2:-200}"
+REQUESTS="${3:-100000}"
 HPA_NAME="nest-api-hpa"
 POD_LABEL="app=nest-api"
 

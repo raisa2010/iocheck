@@ -99,7 +99,7 @@ The overall architecture is:
 
 2. Build the API container image for the cluster and deploy using the helper script:
    ```bash
-   sh scripts/deploy-minikube.sh
+   POSTGRES_DB=myapp POSTGRES_USER=strongkeep POSTGRES_PASSWORD=postgres sh scripts/deploy-minikube.sh
    minikube service nest-api
    ```
 
@@ -227,7 +227,7 @@ kubectl get pods -l app=nest-api
 
 ## Why CPU-based HPA is wrong for this workload
 
-This IOC lookup service is mostly I/O and network bound: the API spends much of its time waiting for memcached responses and HTTP request handling, not burning CPU cycles.
+This IOC lookup service is mostly I/O and memory bound depending on the query pattern: the API spends much of its time waiting for memcached responses and HTTP request handling, not burning CPU cycles.
 
 Measured evidence from load testing showed that request rate and latency climb while pod CPU remains low, so a CPU threshold does not reflect actual service load. That means CPU-based scaling can stay flat when the app is overloaded, or spin up unnecessary replicas when traffic is bursty but CPU is still low.
 

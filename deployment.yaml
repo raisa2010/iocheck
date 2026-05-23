@@ -12,6 +12,20 @@ spec:
       labels:
         app: nest-api
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:15-alpine
+          envFrom:
+            - secretRef:
+                name: postgres-credentials
+          command:
+            - sh
+            - -c
+            - |
+              until PGPASSWORD="$POSTGRES_PASSWORD" pg_isready -h postgres -p 5432 -U "$POSTGRES_USER"; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
       affinity:
         podAntiAffinity:
           # requiredDuringSchedulingIgnoredDuringExecution:
@@ -26,9 +40,14 @@ spec:
         - name: nest-api
           image: strongkeep-api:latest
           imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: postgres-credentials
           env:
             - name: MEMCACHED_SERVERS
               value: "memcached:11211"
+            - name: POSTGRES_HOST
+              value: "postgres"
             - name: MALICIOUS_CACHE_TTL
               value: "3600"
             - name: NODE_ENV
