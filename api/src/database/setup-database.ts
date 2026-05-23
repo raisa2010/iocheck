@@ -1,6 +1,6 @@
 import { Client } from 'pg';
 
-export interface TestDatabaseConfig {
+export interface DatabaseConfig {
   host: string;
   port: number;
   database: string;
@@ -10,11 +10,13 @@ export interface TestDatabaseConfig {
   adminPassword: string;
 }
 
-export function getTestDatabaseConfig(): TestDatabaseConfig {
+export function getDatabaseConfig(): DatabaseConfig {
+  const isTest = process.env.NODE_ENV === 'test';
+
   return {
     host: process.env.POSTGRES_HOST ?? 'localhost',
     port: Number(process.env.POSTGRES_PORT ?? 5432),
-    database: process.env.POSTGRES_DB ?? 'myapp-test',
+    database: process.env.POSTGRES_DB ?? (isTest ? 'myapp-test' : 'myapp'),
     user: process.env.POSTGRES_USER ?? 'strongkeep',
     password: process.env.POSTGRES_PASSWORD ?? 'postgres',
     adminUser: process.env.POSTGRES_ADMIN_USER ?? process.env.USER ?? 'postgres',
@@ -22,10 +24,8 @@ export function getTestDatabaseConfig(): TestDatabaseConfig {
   };
 }
 
-/** Mirrors k8s/postgres/init-user.sh — creates role and database before e2e tests run. */
-export async function setupTestDatabase(
-  config: TestDatabaseConfig = getTestDatabaseConfig(),
-): Promise<void> {
+/** Mirrors k8s/postgres/init-user.sh — creates role, database, and grants. */
+export async function setupDatabase(config: DatabaseConfig = getDatabaseConfig()): Promise<void> {
   const admin = new Client({
     host: config.host,
     port: config.port,

@@ -10,7 +10,7 @@ import { DatabaseService } from './../src/database/database.service';
 import { ThreatIndicator } from './../src/database/entities/threat-indicator.entity';
 import { MetricsService } from './../src/metrics/metrics.service';
 import { MemcachedService } from './../src/security/memcached.service';
-import { getTestDatabaseConfig, setupTestDatabase } from './setup-test-database';
+import { getDatabaseConfig, setupDatabase } from './../src/database/setup-database';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication;
@@ -205,8 +205,8 @@ describe('DatabaseService (e2e)', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
 
-    const dbConfig = getTestDatabaseConfig();
-    await setupTestDatabase(dbConfig);
+    const dbConfig = getDatabaseConfig();
+    await setupDatabase(dbConfig);
 
     moduleFixture = await Test.createTestingModule({
       imports: [
