@@ -1,16 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
 import request from 'supertest';
 import { Repository } from 'typeorm';
 import { AppModule } from './../src/app.module';
 import { DatabaseService } from './../src/database/database.service';
 import { ThreatIndicator } from './../src/database/entities/threat-indicator.entity';
+import { getDatabaseConfig, setupDatabase } from './../src/database/setup-database';
 import { MetricsService } from './../src/metrics/metrics.service';
 import { MemcachedService } from './../src/security/memcached.service';
-import { getDatabaseConfig, setupDatabase } from './../src/database/setup-database';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication;
@@ -24,8 +23,11 @@ describe('AppController (e2e)', () => {
   };
   const databaseServiceStub: Partial<DatabaseService> = {
     ping: async () => true,
-    findByTypeAndValue: async () => null,
-    upsertIoc: async (type, value, source, score) => ({ type, value, source, score } as ThreatIndicator),
+    findByTypeAndValue: async (type, value) => cache.has(`${type}:${value}`) ? JSON.parse(cache.get(`${type}:${value}`)!) : null,
+    upsertIoc: async (type, value, source, score) => {
+      cache.set(`${type}:${value}`, JSON.stringify({ type, value, source, score }));
+      return { type, value, source, score } as ThreatIndicator;
+    },
     getAllIndicators: async () => [],
     deleteIoc: async () => true,
   };
@@ -81,8 +83,11 @@ describe('AppController (e2e)', () => {
   it('/ioc (POST) and /lookup (POST)', async () => {
     const upsertSpy = jest.spyOn(controllerMemcachedStub, 'set');
     const lookupSpy = jest.spyOn(controllerMemcachedStub, 'get');
+    const databaseUpsertSpy = jest.spyOn(databaseServiceStub, 'upsertIoc');
+    const databaseLookupSpy = jest.spyOn(databaseServiceStub, 'findByTypeAndValue')
     const upsertMetricsSpy = jest.spyOn(MetricsService.prototype, 'recordThreatIndicatorUpsert');
     const lookupMetricsSpy = jest.spyOn(MetricsService.prototype, 'recordThreatIndicatorLookup');
+    const databaseMetricsSpy = jest.spyOn(MetricsService.prototype, 'recordDatabaseOperation');
     const payload = {
       type: 'domain',
       value: 'evil.example',
@@ -98,6 +103,10 @@ describe('AppController (e2e)', () => {
 
     expect(upsertMetricsSpy).toHaveBeenCalledTimes(1);
     expect(upsertSpy).toHaveBeenCalledTimes(1);
+    expect(databaseMetricsSpy).toHaveBeenCalledTimes(1);
+    expect(databaseMetricsSpy).toHaveBeenCalledWith('upsert', 'success');
+    expect(databaseUpsertSpy).toHaveBeenCalledTimes(1);
+    expect(databaseUpsertSpy).toHaveBeenCalledWith(payload.type, payload.value, payload.source, payload.score);
 
     await request(app.getHttpServer())
       .post('/lookup')
@@ -106,6 +115,7 @@ describe('AppController (e2e)', () => {
       .expect({ verdict: 'malicious', ioc: payload });
 
     expect(lookupSpy).toHaveBeenCalledTimes(0);
+    expect(databaseLookupSpy).toHaveBeenCalledTimes(0);
     expect(lookupMetricsSpy).toHaveBeenCalledTimes(1);
     expect(lookupMetricsSpy).toHaveBeenCalledWith(true, 'local');
 
@@ -113,6 +123,9 @@ describe('AppController (e2e)', () => {
     lookupMetricsSpy.mockRestore();
     upsertSpy.mockRestore();
     lookupSpy.mockRestore();
+    databaseUpsertSpy.mockRestore();
+    databaseMetricsSpy.mockRestore();
+    databaseLookupSpy.mockRestore();
   });
 
   it('/lookup (POST) should resolve from local ribbon filter without calling memcached', async () => {
@@ -147,8 +160,10 @@ describe('AppController (e2e)', () => {
 
   it('/lookup (POST) should resolve from memcached when not present locally', async () => {
     const spy = jest.spyOn(controllerMemcachedStub, 'get');
+    const databaseSpy = jest.spyOn(databaseServiceStub, 'findByTypeAndValue')
     const metricsSpy = jest.spyOn(MetricsService.prototype, 'recordThreatIndicatorLookup');
     const memcachedOperationSpy = jest.spyOn(MetricsService.prototype, 'recordMemcachedOperation');
+    const databaseOperationSpy = jest.spyOn(MetricsService.prototype, 'recordDatabaseOperation');
     const payload = {
       type: 'ip' as const,
       value: '198.18.0.1',
@@ -168,18 +183,86 @@ describe('AppController (e2e)', () => {
     expect(metricsSpy).toHaveBeenCalledWith(true, 'memcached');
     expect(memcachedOperationSpy).toHaveBeenCalledTimes(1);
     expect(memcachedOperationSpy).toHaveBeenCalledWith('get', 'success');
+    expect(databaseOperationSpy).toHaveBeenCalledTimes(0);
+    expect(databaseSpy).toHaveBeenCalledTimes(0);
 
     spy.mockRestore();
     metricsSpy.mockRestore();
     memcachedOperationSpy.mockRestore();
+    databaseOperationSpy.mockRestore();
+    databaseSpy.mockRestore();
+  });
+
+  it('/lookup (POST) should return from the database when it is not present in either cache', async () => {
+    const lookupSpy = jest.spyOn(controllerMemcachedStub, 'get');
+    const databaseLookupSpy = jest.spyOn(databaseServiceStub, 'findByTypeAndValue')
+    const lookupMetricsSpy = jest.spyOn(MetricsService.prototype, 'recordThreatIndicatorLookup');
+    const memcachedOperationSpy = jest.spyOn(MetricsService.prototype, 'recordMemcachedOperation');
+    const databaseMetricsSpy = jest.spyOn(MetricsService.prototype, 'recordDatabaseOperation');
+    const payload = {
+      type: 'ip' as const,
+      value: '198.18.0.2',
+      source: 'cached-test',
+      score: 73,
+    };
+
+    await databaseServiceStub.upsertIoc?.(payload.type, payload.value, payload.source, payload.score);
+
+    await request(app.getHttpServer())
+      .post('/lookup')
+      .send({ type: 'ip', value: '198.18.0.2' })
+      .expect(201)
+      .expect({ verdict: 'malicious', ioc: payload });
+
+    expect(lookupSpy).toHaveBeenCalledTimes(1)
+    expect(databaseLookupSpy).toHaveBeenCalledTimes(1);
+    expect(memcachedOperationSpy).toHaveBeenCalledTimes(1);
+    expect(databaseMetricsSpy).toHaveBeenCalledTimes(1);
+    expect(lookupMetricsSpy).toHaveBeenCalledTimes(3);
+
+    expect(memcachedOperationSpy).toHaveBeenCalledWith('get', 'success');
+    expect(lookupMetricsSpy).toHaveBeenCalledWith(false, 'local');
+    expect(lookupMetricsSpy).toHaveBeenCalledWith(false, 'memcached');
+    expect(lookupMetricsSpy).toHaveBeenCalledWith(true, 'postgres');
+    expect(databaseMetricsSpy).toHaveBeenCalledWith('find', 'success');
+
+    lookupSpy.mockRestore();
+    databaseLookupSpy.mockRestore();
+    memcachedOperationSpy.mockRestore();
+    lookupMetricsSpy.mockRestore();
+    databaseMetricsSpy.mockRestore();
   });
 
   it('/lookup (POST) should return unknown for a missing IOC', async () => {
+    const lookupSpy = jest.spyOn(controllerMemcachedStub, 'get');
+    const databaseLookupSpy = jest.spyOn(databaseServiceStub, 'findByTypeAndValue')
+    const lookupMetricsSpy = jest.spyOn(MetricsService.prototype, 'recordThreatIndicatorLookup');
+    const memcachedOperationSpy = jest.spyOn(MetricsService.prototype, 'recordMemcachedOperation');
+    const databaseMetricsSpy = jest.spyOn(MetricsService.prototype, 'recordDatabaseOperation');
+
     await request(app.getHttpServer())
       .post('/lookup')
       .send({ type: 'domain', value: 'missing.example' })
       .expect(201)
       .expect({ verdict: 'unknown' });
+
+    expect(lookupSpy).toHaveBeenCalledTimes(1)
+    expect(databaseLookupSpy).toHaveBeenCalledTimes(1);
+    expect(memcachedOperationSpy).toHaveBeenCalledTimes(1);
+    expect(databaseMetricsSpy).toHaveBeenCalledTimes(0);
+    expect(lookupMetricsSpy).toHaveBeenCalledTimes(4);
+
+    expect(memcachedOperationSpy).toHaveBeenCalledWith('get', 'success');
+    expect(lookupMetricsSpy).toHaveBeenCalledWith(false, 'not_found');
+    expect(lookupMetricsSpy).toHaveBeenCalledWith(false, 'local');
+    expect(lookupMetricsSpy).toHaveBeenCalledWith(false, 'memcached');
+    expect(lookupMetricsSpy).toHaveBeenCalledWith(false, 'postgres');
+
+    lookupSpy.mockRestore();
+    databaseLookupSpy.mockRestore();
+    memcachedOperationSpy.mockRestore();
+    lookupMetricsSpy.mockRestore();
+    databaseMetricsSpy.mockRestore();
   });
 
   it('/metrics (GET)', async () => {
@@ -199,7 +282,7 @@ describe('DatabaseService (e2e)', () => {
   const memcachedStub: Partial<MemcachedService> = {
     ping: async () => true,
     get: async () => null,
-    set: async () => {},
+    set: async () => { },
   };
 
   beforeAll(async () => {
