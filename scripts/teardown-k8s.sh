@@ -33,6 +33,7 @@ MANIFESTS=(
   deployment.yaml
   k8s/service.yaml
   k8s/memcached-deployment.yaml
+  k8s/postgres-deployment.yaml
   k8s/monitoring.yaml
   k8s/service-prod.yaml
   k8s/hpa.yaml
@@ -40,6 +41,8 @@ MANIFESTS=(
 )
 
 echo "Deleting Kubernetes resources (ignore-not-found)..."
+kubectl delete secret postgres-credentials --ignore-not-found
+kubectl delete configmap postgres-init --ignore-not-found
 for m in "${MANIFESTS[@]}"; do
   if [ -f "$m" ]; then
     echo "  kubectl delete -f $m"

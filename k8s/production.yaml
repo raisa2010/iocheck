@@ -1,5 +1,16 @@
 # Production combined manifests for nest-api and memcached
 # Replace the host in the Ingress with your real domain and configure TLS as needed.
+#
+# Postgres credentials are loaded from the `postgres-credentials` secret.
+# Create it in CI from GitHub repository secrets:
+#   POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+#
+# Example:
+#   kubectl create secret generic postgres-credentials \
+#     --from-literal=POSTGRES_DB="${{ secrets.POSTGRES_DB }}" \
+#     --from-literal=POSTGRES_USER="${{ secrets.POSTGRES_USER }}" \
+#     --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+#     --dry-run=client -o yaml | kubectl apply -f -
 
 ---
 apiVersion: apps/v1
@@ -16,6 +27,20 @@ spec:
       labels:
         app: nest-api
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:15-alpine
+          envFrom:
+            - secretRef:
+                name: postgres-credentials
+          command:
+            - sh
+            - -c
+            - |
+              until PGPASSWORD="$POSTGRES_PASSWORD" pg_isready -h postgres -p 5432 -U "$POSTGRES_USER"; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
       affinity:
         podAntiAffinity:
           # requiredDuringSchedulingIgnoredDuringExecution:
@@ -30,9 +55,14 @@ spec:
         - name: nest-api
           image: strongkeep-api:latest
           imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: postgres-credentials
           env:
             - name: MEMCACHED_SERVERS
               value: "memcached:11211"
+            - name: POSTGRES_HOST
+              value: "postgres"
             - name: MALICIOUS_CACHE_TTL
               value: "3600"
             - name: NODE_ENV
@@ -48,14 +78,14 @@ spec:
               memory: "512Mi"
           livenessProbe:
             httpGet:
-              path: /health
+              path: /healthz
               port: 3000
             initialDelaySeconds: 15
             periodSeconds: 20
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
+              path: /readyz
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10

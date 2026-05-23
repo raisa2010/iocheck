@@ -20,6 +20,16 @@ echo "4/6: Building Docker image in minikube: $IMAGE_TAG"
 docker build -t "$IMAGE_TAG" -f Dockerfile .
 
 echo "5/6: Applying Kubernetes manifests"
+kubectl create secret generic postgres-credentials \
+  --from-literal=POSTGRES_DB="${POSTGRES_DB:?POSTGRES_DB is required}" \
+  --from-literal=POSTGRES_USER="${POSTGRES_USER:?POSTGRES_USER is required}" \
+  --from-literal=POSTGRES_PASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+sh scripts/generate-postgres-init.sh
+kubectl create configmap postgres-init \
+  --from-file=init.sql=api/postgres/init.sql \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f k8s/postgres-deployment.yaml
 kubectl apply -f deployment.yaml
 kubectl apply -f k8s/service.yaml
 kubectl apply -f k8s/memcached-deployment.yaml
@@ -27,6 +37,7 @@ kubectl apply -f k8s/monitoring.yaml
 kubectl apply -f k8s/hpa.yaml
 
 echo "6/6: Waiting for deployment rollouts"
+kubectl rollout status deployment/postgres --timeout=120s || true
 kubectl rollout status deployment/nest-api --timeout=120s || true
 kubectl rollout status deployment/memcached --timeout=60s || true
 kubectl rollout status deployment/prometheus -n monitoring --timeout=120s || true
@@ -56,3 +67,4 @@ echo ""
 echo "Check pods:"
 echo "  kubectl get pods,svc"
 echo ""
+echo "===== Minikube deploy finished at $(date -u +"%Y-%m-%dT%H:%M:%SZ") ====="
