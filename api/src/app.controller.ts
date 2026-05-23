@@ -1,9 +1,10 @@
 import { BadRequestException, Body, Controller, Get, Post, Response } from '@nestjs/common';
 import type { Response as ExpressResponse } from 'express';
 import { AppService } from './app.service';
+import { DatabaseService } from './database/database.service';
 import { MetricsService } from './metrics/metrics.service';
-import { ThreatIndicatorService } from './security/threat-indicator.service';
 import { MemcachedService } from './security/memcached.service';
+import { ThreatIndicatorService } from './security/threat-indicator.service';
 
 type IocType = 'ip' | 'domain' | 'sha256';
 
@@ -38,6 +39,7 @@ export class AppController {
     private readonly threatIndicatorService: ThreatIndicatorService,
     private readonly metricsService: MetricsService,
     private readonly memcachedService: MemcachedService,
+    private readonly databaseService: DatabaseService,
   ) { }
 
   @Get()
@@ -55,6 +57,10 @@ export class AppController {
     const ok = await this.memcachedService.ping();
     if (!ok) {
       throw new Error('Memcached connection unavailable');
+    }
+    const dbOk = await this.databaseService.ping();
+    if (!dbOk) {
+      throw new Error('Database connection unavailable');
     }
     return { status: 'ok' };
   }

@@ -1,26 +1,38 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
+import { BeforeInsert, BeforeUpdate, Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
-@Entity('threat_indicators')
-@Index(['indicator'], { unique: true })
+@Entity('ioc')
+@Index(['type', 'value'], { unique: true })
 export class ThreatIndicator {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
-  @Column({ type: 'varchar', length: 255 })
-  indicator: string;
+    @Column({ type: 'varchar', length: 50 })
+    type!: string;
 
-  @Column({ type: 'varchar', length: 50, default: 'ip' })
-  type: string; // e.g., 'ip', 'domain', 'hash'
+    @Column({ type: 'varchar', length: 255 })
+    value!: string;
 
-  @Column({ type: 'text', nullable: true })
-  description: string;
+    @Column({ type: 'varchar', length: 100 })
+    source!: string;
 
-  @Column({ type: 'varchar', length: 100, nullable: true })
-  source: string; // e.g., 'threat-feed', 'manual', 'api'
+    @Column({ type: 'int' })
+    score!: number;
 
-  @CreateDateColumn()
-  createdAt: Date;
+    @Column({ type: 'bigint' })
+    createdAt!: number;
 
-  @UpdateDateColumn()
-  updatedAt: Date;
+    @Column({ type: 'bigint' })
+    updatedAt!: number;
+
+    @BeforeInsert()
+    setCreatedAt(): void {
+        const now = Math.floor(Date.now() / 1000);
+        this.createdAt = now;
+        this.updatedAt = now;
+    }
+
+    @BeforeUpdate()
+    setUpdatedAt(): void {
+        this.updatedAt = Math.floor(Date.now() / 1000);
+    }
 }

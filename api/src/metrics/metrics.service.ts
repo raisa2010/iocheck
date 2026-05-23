@@ -10,6 +10,7 @@ export class MetricsService {
     private threatIndicatorLookupsCounter!: promClient.Counter<string>;
     private threatIndicatorUpsertsCounter!: promClient.Counter<string>;
     private memcachedOperationsCounter!: promClient.Counter<string>;
+    private databaseOperationsCounter!: promClient.Counter<string>;
     private httpRequestsTotal!: promClient.Counter<string>;
     private httpRequestDurationHistogram!: promClient.Histogram<string>;
 
@@ -50,6 +51,13 @@ export class MetricsService {
             labelNames: ['operation', 'status'],
         });
 
+         // Database operation metrics
+         this.databaseOperationsCounter = new promClient.Counter({
+            name: 'database_operations_total',
+            help: 'Total number of database operations',
+            labelNames: ['operation', 'status'],
+        });
+
         this.httpRequestsTotal = new promClient.Counter({
             name: 'http_requests_total',
             help: 'Total number of HTTP requests',
@@ -85,6 +93,10 @@ export class MetricsService {
 
     recordMemcachedOperation(operation: 'get' | 'set', status: 'success' | 'error'): void {
         this.memcachedOperationsCounter.inc({ operation, status });
+    }
+
+    recordDatabaseOperation(operation: 'upsert' | 'find', status: 'success' | 'error'): void {
+        this.databaseOperationsCounter.inc({ operation, status });
     }
 
     recordHttpRequest(method: string, route: string, status: number): void {

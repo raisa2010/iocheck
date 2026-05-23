@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Request } from 'express';
+import { DatabaseService } from '../database/database.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { MemcachedService } from './memcached.service';
 
@@ -25,26 +26,10 @@ export class ThreatIndicatorService {
     constructor(
         private readonly memcachedService?: MemcachedService,
         private readonly metricsService?: MetricsService,
-        // private readonly databaseService?: DatabaseService,
+        private readonly databaseService?: DatabaseService,
     ) {
         this.loadIndicatorsFromEnvironment();
-        // this.loadIndicatorsFromDatabase();
     }
-
-    // private async loadIndicatorsFromDatabase(): Promise<void> {
-    //     try {
-    //         const dbIndicators = await this.databaseService?.getAllIndicators();
-    //         if (dbIndicators && dbIndicators.length > 0) {
-    //             dbIndicators.forEach((indicator) => {
-    //                 const normalized = this.normalizeIndicator(indicator);
-    //                 this.maliciousIndicators.add(normalized);
-    //             });
-    //             this.logger.log(`Loaded ${dbIndicators.length} indicators from database`);
-    //         }
-    //     } catch (err) {
-    //         this.logger.warn(`Failed to load indicators from database: ${err.message}`);
-    //     }
-    // }
 
     getIndicators(): string[] {
         return Array.from(this.maliciousIndicators);
@@ -66,6 +51,14 @@ export class ThreatIndicatorService {
                 if (cached) return ip;
             } catch (_) {
                 // ignore cache errors and fall back to in-memory list
+            }
+
+            // check database third
+            try {
+                const found = await this.databaseService?.findByTypeAndValue('ip', this.normalizeIndicator(ip));
+                if (found) return ip;
+            } catch (_) {
+                // ignore database errors and fall back to in-memory list
             }
         }
 
@@ -143,6 +136,13 @@ export class ThreatIndicatorService {
             this.metricsService?.recordMemcachedOperation('set', 'error');
         }
 
+        try {
+            await this.databaseService?.upsertIoc(ioc.type, ioc.value, ioc.source, ioc.score);
+            this.metricsService?.recordDatabaseOperation('upsert', 'success');
+        } catch (err) {
+            this.metricsService?.recordDatabaseOperation('upsert', 'error');
+        }
+
         return record;
     }
 
@@ -173,6 +173,17 @@ export class ThreatIndicatorService {
             }
         } catch (_) {
             this.metricsService?.recordMemcachedOperation('get', 'error');
+        }
+
+        try {
+            const found = await this.databaseService?.findByTypeAndValue(type, normalized);
+            if (found) {
+                const dbRecord: IocRecord = { type, value: normalized, source: found.source, score: found.score };
+                this.metricsService?.recordThreatIndicatorLookup(true, 'postgres');
+                return { found: true, source: 'postgres', ioc: dbRecord };
+            }
+        } catch (_) {
+            this.metricsService?.recordDatabaseOperation('find', 'error');
         }
 
         this.metricsService?.recordThreatIndicatorLookup(false, 'not_found');
