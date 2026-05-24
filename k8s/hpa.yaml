@@ -16,4 +16,4 @@ spec:
           name: http_requests_per_second
         target:
           type: AverageValue
-          averageValue: 25
+          averageValue: 50
