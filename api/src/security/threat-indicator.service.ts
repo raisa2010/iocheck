@@ -129,8 +129,7 @@ export class ThreatIndicatorService {
         }
 
         try {
-            const ttl = Number(process.env.MALICIOUS_CACHE_TTL ?? 3600);
-            await this.memcachedService?.set(`blocked:${key}`, JSON.stringify(record), ttl);
+            await this.memcachedService?.set(`blocked:${key}`, JSON.stringify(record));
             this.metricsService?.recordMemcachedOperation('set', 'success');
         } catch (err) {
             this.metricsService?.recordMemcachedOperation('set', 'error');
@@ -157,6 +156,8 @@ export class ThreatIndicatorService {
         if (local) {
             this.metricsService?.recordThreatIndicatorLookup(true, 'local');
             return { found: true, source: 'local', ioc: local };
+        } else {
+            this.metricsService?.recordThreatIndicatorLookup(false, 'local');
         }
 
         try {
@@ -170,6 +171,8 @@ export class ThreatIndicatorService {
                 } catch (err: any) {
                     this.logger.debug(`Failed to parse memcached IOC record for ${key}: ${err.message ?? err}`);
                 }
+            } else {
+                this.metricsService?.recordThreatIndicatorLookup(false, 'memcached');
             }
         } catch (_) {
             this.metricsService?.recordMemcachedOperation('get', 'error');
@@ -180,7 +183,10 @@ export class ThreatIndicatorService {
             if (found) {
                 const dbRecord: IocRecord = { type, value: normalized, source: found.source, score: found.score };
                 this.metricsService?.recordThreatIndicatorLookup(true, 'postgres');
+                this.metricsService?.recordDatabaseOperation('find', 'success');
                 return { found: true, source: 'postgres', ioc: dbRecord };
+            } else {
+                this.metricsService?.recordThreatIndicatorLookup(false, 'postgres');
             }
         } catch (_) {
             this.metricsService?.recordDatabaseOperation('find', 'error');

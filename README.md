@@ -231,6 +231,10 @@ This IOC lookup service is mostly I/O and memory bound depending on the query pa
 
 Measured evidence from load testing showed that request rate and latency climb while pod CPU remains low, so a CPU threshold does not reflect actual service load. That means CPU-based scaling can stay flat when the app is overloaded, or spin up unnecessary replicas when traffic is bursty but CPU is still low.
 
+The latency maxes out at 5.5s with the dynamic load tester that rotates through a number of IPs in order to check for the IOC. Note that these are all true negatives so they all hit the database. This is likely the reason for the spike in latency in the order of seconds. The static IP is a single true positive and simulates perpetual cache hits of a hotkey - i.e. a well known and frequently used IOC potentially performing DDOS attacks. Refer to the images in the results/ folder for the prometheus metric screenshots.
+
+Note that the metrics collected on posrt 9090 prometheus are not the same as the kubernetes container metrics, they are the node level cpu and memory idle metrics that have the screenshots taken in the folder. The kubernetes container metrics for memory (due to memcached connections and number of IOC in the ribbon filter) are reflected by the k8s metric server in `kubectl top pods`. 
+
 ## Request-rate autoscaling
 
 The cluster now uses a Prometheus Adapter-backed HPA, scaling on `http_requests_per_second`:
@@ -253,6 +257,20 @@ kubectl top nodes
 ```
 
 If you use Minikube, the repo's `scripts/deploy-minikube.sh` already enables `metrics-server`.
+
+## Enhancements
+
+Pending enhancements:
+- Stress test the memcached layer specifically in addition to the postgres database.
+- Fine tune the autoscaling behaviour
+- Add on grafana dashboards.
+- Mitigate Hotkey and thundernig herd problems.
+- Investigate why the autoscaler shows unknown for <unknown>/50 when scaling.
+- Use a larger number of replicas for initial deployment (3 instead of 1) - for HA. It's set to 1 to allow stressing locally with a high enough load to induce autoscaling.
+- Network connection is poor since I'm travelling - causing some latency issues.
+- CPU usage goes up to 95 - 100% - investigate why. This is causing latency issues as well. Likely due to the hashing needed for the filter. Allocate a higher amount for CPU to ensure it does not become the bottleneck.
+- Measure connection count to memcached and DB.
+- Expose memcached and DB level metrics as well.
 
 ## Connecting to Memcached via Telnet
 
