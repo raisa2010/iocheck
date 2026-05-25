@@ -319,3 +319,12 @@ Pending enhancements:
 
 - `api/README.md` contains API-specific documentation and test instructions.
 - This repo is structured for a stateless API layer with external caching and a persistent datastore.
+
+## Chats
+
+ChatGPT: https://chatgpt.com/share/6a13acfb-788c-83ec-afb6-d099dd17ddc7
+ChatGPT: https://chatgpt.com/share/6a13ad1e-5fac-83ec-ab71-7eb0bd5ec86d
+ChatGPT: https://chatgpt.com/share/6a13ad31-4278-83ec-8bcc-2d5be13affbc
+ChatGPT: https://chatgpt.com/share/6a13ad41-bc0c-83ec-b10e-e5f077125b7b
+Cursor: /strongkeep/cursor_postgresql_connection_error.md
+Github CoPilot: /strongkeep/chat.json
