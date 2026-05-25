@@ -58,7 +58,6 @@ export class DatabaseService {
         source,
         score,
       });
-      console.log('saving new ioc to database', { type, value, source, score });
       return await this.threatIndicatorRepository.save(ioc);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
